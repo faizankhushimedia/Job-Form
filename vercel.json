@@ -2,6 +2,7 @@
   "version": 2,
   "framework": "nextjs",
   "rootDirectory": ".",
+  "buildCommand": "npm run build",
   "cleanUrls": true,
   "headers": [
     {
