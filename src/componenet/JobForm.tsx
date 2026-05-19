@@ -1,8 +1,16 @@
 ﻿"use client";
 
 import React, { useState, ChangeEvent, FormEvent } from "react";
+import { useForm } from "react-hook-form";
+import Swal from "sweetalert2";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "@/config/firebase";
+import { storage } from "@/config/firebase";
+import {
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+} from "firebase/storage";
 
 import logo from "@/assets/LOGO.png";
 import Image from "next/image";
@@ -26,6 +34,8 @@ type UnderlineInputProps = {
   handleInputChange?: (
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
   ) => void;
+  register?: any;
+  error?: string | null;
 };
 
 type TextAreaInputProps = {
@@ -45,7 +55,10 @@ type PreviewBoxProps = {
   field: string;
   required?: boolean;
   preview?: string;
+  fileName?: string;
   onFileChange: (e: ChangeEvent<HTMLInputElement>, fieldName: string) => void;
+  accept?: string;
+  inputRef?: (el: HTMLInputElement | null) => void;
 };
 
 type SubHeadingProps = {
@@ -97,6 +110,8 @@ const UnderlineInput = ({
   onChange,
   formData,
   handleInputChange,
+  register,
+  error,
 }: UnderlineInputProps) => (
   <div className="w-full group">
     <label className="text-[10px] font-black text-neutral-700 uppercase tracking-wider mb-1 block select-none group-focus-within:text-black transition-colors">
@@ -104,21 +119,27 @@ const UnderlineInput = ({
       {required && <span className="text-red-600 font-black ml-0.5">*</span>}
     </label>
 
-    <input
-      type={type}
-      name={name}
-      required={required}
-      placeholder={placeholder}
-      value={
-        value !== undefined
-          ? value
-          : name
-            ? ((formData as any)?.[name] ?? "")
-            : ""
-      }
-      onChange={onChange || handleInputChange}
-      className="w-full py-2 border-b border-neutral-300 focus:border-black outline-none text-sm font-semibold text-black transition-all bg-transparent placeholder:text-neutral-300"
-    />
+    <>
+      <input
+        type={type}
+        name={name}
+        required={required}
+        placeholder={placeholder}
+        {...(register && name ? register(name, { required }) : {})}
+        value={
+          register && name
+            ? undefined
+            : value !== undefined
+              ? value
+              : name
+                ? ((formData as any)?.[name] ?? "")
+                : ""
+        }
+        onChange={register && name ? undefined : onChange || handleInputChange}
+        className="w-full py-2 border-b border-neutral-300 focus:border-black outline-none text-sm font-semibold text-black transition-all bg-transparent placeholder:text-neutral-300"
+      />
+      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+    </>
   </div>
 );
 
@@ -156,7 +177,10 @@ const PreviewBox = ({
   field,
   required,
   preview,
+  fileName,
   onFileChange,
+  accept = "image/*",
+  inputRef,
 }: PreviewBoxProps) => (
   <div className="space-y-2">
     <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block">
@@ -177,13 +201,19 @@ const PreviewBox = ({
         </div>
       )}
       <input
+        ref={(el) => inputRef && inputRef(el)}
         type="file"
-        accept="image/*"
+        accept={accept}
         required={required}
         onChange={(e) => onFileChange(e, field)}
         className="absolute inset-0 opacity-0 cursor-pointer"
       />
     </div>
+    {fileName ? (
+      <p className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">
+        Selected: {fileName}
+      </p>
+    ) : null}
   </div>
 );
 
@@ -244,6 +274,8 @@ interface EducationRow {
   board: string;
   year: string;
   grade: string;
+  documentName?: string;
+  documentUrl?: string;
 }
 
 interface ExperienceRow {
@@ -272,6 +304,8 @@ interface CertificationRow {
   course: string;
   issuer: string;
   year: string;
+  documentName?: string;
+  documentUrl?: string;
 }
 
 const initialFormData = {
@@ -378,6 +412,8 @@ const initialFormData = {
       board: "",
       year: "",
       grade: "",
+      documentName: "",
+      documentUrl: "",
     },
     {
       level: "Intermediate",
@@ -386,6 +422,8 @@ const initialFormData = {
       board: "",
       year: "",
       grade: "",
+      documentName: "",
+      documentUrl: "",
     },
     {
       level: "Bachelor's",
@@ -394,6 +432,8 @@ const initialFormData = {
       board: "",
       year: "",
       grade: "",
+      documentName: "",
+      documentUrl: "",
     },
     {
       level: "Master's",
@@ -402,12 +442,16 @@ const initialFormData = {
       board: "",
       year: "",
       grade: "",
+      documentName: "",
+      documentUrl: "",
     },
   ] as EducationRow[],
   certifications: Array.from({ length: 4 }, () => ({
     course: "",
     issuer: "",
     year: "",
+    documentName: "",
+    documentUrl: "",
   })) as CertificationRow[],
   experience: Array.from({ length: 3 }, () => ({
     company: "",
@@ -440,7 +484,61 @@ export default function JobForm() {
   const [formData, setFormData] = useState(initialFormData);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [fileNames, setFileNames] = useState<Record<string, string>>({});
+  const [files, setFiles] = useState<Record<string, File>>({});
+  const fileInputsRef = React.useRef<Record<string, HTMLInputElement | null>>(
+    {},
+  );
   const [saving, setSaving] = useState(false);
+
+  const {
+    register,
+    handleSubmit: rhfHandleSubmit,
+    trigger,
+    formState: { errors },
+    getValues,
+  } = useForm();
+
+  const BUNNY_STORAGE_ZONE = "jobforn";
+  const BUNNY_ACCESS_KEY = "a6448947-c4f4-4310-a492000efc6f-0c88-42ed";
+  const BUNNY_HOSTNAME = "uk.storage.bunnycdn.com";
+
+  const BUNNY_PULL_ZONE_URL = "https://jobform-assets.b-cdn.net";
+
+  const uploadFileToBunny = async (
+    file: File,
+    fieldName: string,
+  ): Promise<string | null> => {
+    const uniqueId = Date.now() + "_" + Math.floor(Math.random() * 1000);
+    const cleanFileName = file.name.replace(/\s+/g, "_");
+    const fileName = `${uniqueId}_${cleanFileName}`;
+
+    const uploadUrl = `https://${BUNNY_HOSTNAME}/${BUNNY_STORAGE_ZONE}/${fileName}`;
+
+    try {
+      console.log(`📡 Sending [${fieldName}] to Bunny: ${fileName}`);
+
+      const response = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          AccessKey: BUNNY_ACCESS_KEY,
+          "Content-Type": "application/octet-stream",
+        },
+        body: file,
+      });
+
+      if (response.ok) {
+        const finalUrl = `${BUNNY_PULL_ZONE_URL}/${fileName}`;
+        console.log(` [${fieldName}] Uploaded! Link: ${finalUrl}`);
+        return finalUrl;
+      } else {
+        console.error(` Upload Error for ${fieldName}:`, response.status);
+        return null;
+      }
+    } catch (error) {
+      console.error(` Connection Error for ${fieldName}:`, error);
+      return null;
+    }
+  };
 
   const handleInputChange = (
     e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
@@ -464,8 +562,8 @@ export default function JobForm() {
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setFileNames((prev) => ({ ...prev, [fieldName]: file.name }));
+    setFiles((prev) => ({ ...prev, [fieldName]: file }));
 
     if (file.type.startsWith("image/")) {
       const reader = new FileReader();
@@ -477,6 +575,8 @@ export default function JobForm() {
       reader.readAsDataURL(file);
       return;
     }
+
+    setPreviews((prev) => ({ ...prev, [fieldName]: file.name }));
   };
 
   const updateList = (
@@ -490,52 +590,157 @@ export default function JobForm() {
     setFormData((prev) => ({ ...prev, [section]: newList }));
   };
 
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!formData.consent) {
-      alert("Please confirm the declaration checkbox.");
+  const validateEducation = async () => {
+    for (let i = 0; i < formData.education.length; i++) {
+      const row = formData.education[i];
+
+      if (row.subject && !fileNames[`educationDoc${i}`]) {
+        await Swal.fire({
+          icon: "warning",
+          title: "Document Required",
+          text: `${row.level || "Education"} row ka document required hai (subject filled hai)`,
+        });
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const validateCertifications = async () => {
+    for (let i = 0; i < formData.certifications.length; i++) {
+      const row = formData.certifications[i];
+
+      if (row.course && !fileNames[`certificationDoc${i}`]) {
+        await Swal.fire({
+          icon: "warning",
+          title: "Document Required",
+          text: `Certification row ${i + 1} ka document required hai`,
+        });
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const validateExperience = async () => {
+    for (let i = 0; i < formData.experience.length; i++) {
+      const exp = formData.experience[i];
+
+      if (exp.company && !fileNames[`experienceLetter${i + 1}`]) {
+        await Swal.fire({
+          icon: "warning",
+          title: "Document Required",
+          text: `Experience row ${i + 1} ka document required hai`,
+        });
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const performSubmit = async (dataToSave: Record<string, any>) => {
+    if (!dataToSave.consent) {
+      await Swal.fire({
+        icon: "warning",
+        text: "Please check the consent box.",
+      });
       return;
     }
 
     setSaving(true);
-    if (!db) {
-      alert(
-        "Firebase is not configured. Please set NEXT_PUBLIC_FIREBASE_* env variables.",
-      );
-      setSaving(false);
-      return;
-    }
+    console.log("🚀 FORM SUBMISSION STARTED...");
 
     try {
+      const fileUrls: Record<string, string> = {};
+      const fileEntries = Object.entries(files);
+
+      if (fileEntries.length > 0) {
+        console.log(`📦 Found ${fileEntries.length} files to upload.`);
+
+        await Promise.all(
+          fileEntries.map(async ([field, file]) => {
+            const url = await uploadFileToBunny(file, field);
+            if (url) {
+              fileUrls[field] = url;
+            }
+          }),
+        );
+      } else {
+        console.log("No files selected for upload.");
+      }
+
+      const attachDocFields = (rows: any[] = [], prefix: string) =>
+        rows.map((row, idx) => ({
+          ...row,
+          documentName: fileNames[`${prefix}${idx}`] ?? "",
+          documentUrl: fileUrls[`${prefix}${idx}`] ?? "",
+        }));
+
+      const enrichedExperience = (dataToSave.experience ?? []).map(
+        (row: any, idx: number) => ({
+          ...row,
+          experienceLetterName: fileNames[`experienceLetter${idx + 1}`] ?? "",
+          experienceLetterUrl: fileUrls[`experienceLetter${idx + 1}`] ?? "",
+        }),
+      );
+
       const submitData = {
-        ...formData,
-        fileNames,
+        ...dataToSave,
+        photoUrl: fileUrls.photo || "",
+        cnicFrontUrl: fileUrls.cnicFront || "",
+        cnicBackUrl: fileUrls.cnicBack || "",
+        passportCopyUrl: fileUrls.passportCopy || "",
+        signatureImageUrl: fileUrls.signatureImage || "",
+        thumbImpressionUrl: fileUrls.thumbImpression || "",
+        education: attachDocFields(dataToSave.education ?? [], "educationDoc"),
+        certifications: attachDocFields(
+          dataToSave.certifications ?? [],
+          "certificationDoc",
+        ),
+        experience: enrichedExperience,
         createdAt: serverTimestamp(),
       };
 
-      console.log("📋 Form Data:", formData);
-      console.log("📎 File Names:", fileNames);
-      console.log("📤 Submitting to Firestore:", submitData);
+      console.log(" Final JSON for Firebase:", submitData);
 
-      const docRef = await addDoc(collection(db, "employeeForms"), submitData);
+      // Firebase mein save karna
+      const docRef = await addDoc(
+        collection(db as any, "employeeForms"),
+        submitData,
+      );
+      console.log(" Successfully Saved! ID:", docRef.id);
 
-      console.log("✅ Successfully saved to Firestore!");
-      console.log("📍 Document ID:", docRef.id);
-      console.log("📊 Saved Data:", submitData);
-
+      // Form Reset aur Success Message
       setFormData(initialFormData);
       setPreviews({});
+      setFiles({});
       setFileNames({});
 
-      alert("✅ Form submitted successfully! Data saved to Firebase.");
+      await Swal.fire({
+        icon: "success",
+        title: "Submitted!",
+        text: "Data saved to Firebase and Files to Bunny.net",
+      });
     } catch (error) {
-      console.error("❌ Firestore submit failed:", error);
-      alert(
-        "Unable to save form data. Please check your Firebase configuration.",
-      );
+      console.error("SUBMISSION FAILED:", error);
+      await Swal.fire({
+        icon: "error",
+        text: "Something went wrong. Check Console.",
+      });
     } finally {
-      setSaving(false);
+      setSaving(false); // Loading Stop
+      console.log("PROCESS FINISHED.");
     }
+  };
+
+  const onSubmit = async (rhfValues: Record<string, any>) => {
+    const merged = { ...formData, ...rhfValues };
+
+    if (!validateEducation()) return;
+    if (!validateCertifications()) return;
+    if (!validateExperience()) return;
+
+    await performSubmit(merged);
   };
 
   return (
@@ -593,7 +798,7 @@ export default function JobForm() {
           </ul>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={rhfHandleSubmit(onSubmit)}>
           <SectionCard
             number="01"
             title="Personal Details"
@@ -607,13 +812,17 @@ export default function JobForm() {
                   field="photo"
                   required
                   preview={previews.photo}
+                  fileName={fileNames.photo}
                   onFileChange={handleFileChange}
+                  inputRef={(el) => (fileInputsRef.current.photo = el)}
                 />
               </div>
               <div className="flex-1 space-y-8">
                 <UnderlineInput
                   formData={formData}
                   handleInputChange={handleInputChange}
+                  register={register}
+                  error={errors.fullName?.message as string}
                   label="Full Name (as per CNIC)"
                   name="fullName"
                   required
@@ -636,6 +845,8 @@ export default function JobForm() {
                 handleInputChange={handleInputChange}
                 label="CNIC Number"
                 name="cnic"
+                register={register}
+                error={errors.cnic?.message as string}
                 required
                 placeholder="XXXXX-XXXXXXX-X"
               />
@@ -652,6 +863,8 @@ export default function JobForm() {
                 handleInputChange={handleInputChange}
                 label="Date of Birth"
                 name="dob"
+                register={register}
+                error={errors.dob?.message as string}
                 required
                 type="date"
               />
@@ -705,7 +918,7 @@ export default function JobForm() {
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="Nationality *"
+                label="Nationality"
                 name="nationality"
                 value={formData.nationality}
                 required
@@ -733,14 +946,18 @@ export default function JobForm() {
                 field="cnicFront"
                 required
                 preview={previews.cnicFront}
+                fileName={fileNames.cnicFront}
                 onFileChange={handleFileChange}
+                inputRef={(el) => (fileInputsRef.current.cnicFront = el)}
               />
               <PreviewBox
                 label="CNIC Back Side"
                 field="cnicBack"
                 required
                 preview={previews.cnicBack}
+                fileName={fileNames.cnicBack}
                 onFileChange={handleFileChange}
+                inputRef={(el) => (fileInputsRef.current.cnicBack = el)}
               />
               <UnderlineInput
                 formData={formData}
@@ -761,7 +978,9 @@ export default function JobForm() {
                   label="Passport Copy (Optional)"
                   field="passportCopy"
                   preview={previews.passportCopy}
+                  fileName={fileNames.passportCopy}
                   onFileChange={handleFileChange}
+                  inputRef={(el) => (fileInputsRef.current.passportCopy = el)}
                 />
               </div>
             </div>
@@ -771,23 +990,27 @@ export default function JobForm() {
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="Mobile ? Primary *"
+                label="Mobile Primary"
                 name="mobilePrimary"
+                register={register}
+                error={errors.mobilePrimary?.message as string}
                 required
                 placeholder="03XX-XXXXXXX"
               />
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="Mobile ? Secondary"
-                name="mobileSecondary"
+                label="Mobile Secondary"
+                name="mobile Secondary"
                 placeholder="03XX-XXXXXXX"
               />
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="Personal Email Address *"
+                label="Personal Email Address"
                 name="email"
+                register={register}
+                error={errors.email?.message as string}
                 required
                 placeholder="name@example.com"
               />
@@ -795,7 +1018,7 @@ export default function JobForm() {
                 <UnderlineInput
                   formData={formData}
                   handleInputChange={handleInputChange}
-                  label="Current Residential Address *"
+                  label="Current Residential Address"
                   name="currentAddress"
                   required
                   placeholder="House No, Street, Area, City, Province"
@@ -815,152 +1038,10 @@ export default function JobForm() {
 
           <SectionCard
             number="02"
-            title="Employment Details"
-            sub="Role, compensation & joining"
+            title="Bank Details & Tax Information"
+            sub="Provide your account information for salary processing"
           >
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <UnderlineInput
-                formData={formData}
-                handleInputChange={handleInputChange}
-                label="Employee ID *"
-                name="empId"
-                required
-                placeholder="KM-XXXX"
-              />
-              <UnderlineInput
-                formData={formData}
-                handleInputChange={handleInputChange}
-                label="Date of Joining *"
-                name="joiningDate"
-                required
-                type="date"
-              />
-              <UnderlineInput
-                formData={formData}
-                handleInputChange={handleInputChange}
-                label="Designation *"
-                name="designation"
-                required
-                placeholder="e.g. Content Writer"
-              />
-              <UnderlineInput
-                formData={formData}
-                handleInputChange={handleInputChange}
-                label="Department *"
-                name="department"
-                required
-                placeholder="e.g. Marketing"
-              />
-              <UnderlineInput
-                formData={formData}
-                handleInputChange={handleInputChange}
-                label="Reporting Manager *"
-                name="manager"
-                required
-              />
-              <div className="w-full">
-                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1 block">
-                  Employment Type *
-                </label>
-                <select
-                  name="empType"
-                  value={formData.empType}
-                  required
-                  className="w-full py-2 border-b border-gray-300 bg-transparent outline-none text-sm"
-                  onChange={handleInputChange}
-                >
-                  <option value="">Select</option>
-                  <option>Full-Time</option>
-                  <option>Contract</option>
-                  <option>Internship</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-10">
-              <UnderlineInput
-                formData={formData}
-                handleInputChange={handleInputChange}
-                label="Work Location"
-                name="location"
-                placeholder="e.g. Gujranwala Office"
-              />
-              <UnderlineInput
-                formData={formData}
-                handleInputChange={handleInputChange}
-                label="Working Hours"
-                name="hours"
-                placeholder="e.g. 9AM?6PM"
-              />
-              <UnderlineInput
-                formData={formData}
-                handleInputChange={handleInputChange}
-                label="Probation Period (Months)"
-                name="probation"
-                type="number"
-                placeholder="e.g. 3"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-10">
-              <UnderlineInput
-                formData={formData}
-                handleInputChange={handleInputChange}
-                label="Probation End Date"
-                name="probationEnd"
-                type="date"
-              />
-              <UnderlineInput
-                formData={formData}
-                handleInputChange={handleInputChange}
-                label="Contract End Date (if applicable)"
-                name="contractEnd"
-                type="date"
-              />
-            </div>
-
-            <SubHeading text="Compensation" />
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <UnderlineInput
-                formData={formData}
-                handleInputChange={handleInputChange}
-                label="Gross Monthly Salary (PKR) *"
-                name="grossSalary"
-                required
-                type="number"
-              />
-              <UnderlineInput
-                formData={formData}
-                handleInputChange={handleInputChange}
-                label="Basic Salary (PKR)"
-                name="basicSalary"
-                type="number"
-              />
-              <UnderlineInput
-                formData={formData}
-                handleInputChange={handleInputChange}
-                label="Allowances (PKR)"
-                name="allowances"
-                type="number"
-              />
-              <div className="w-full">
-                <label className="text-[11px] font-bold text-gray-500 uppercase block mb-1">
-                  Payment Mode *
-                </label>
-                <select
-                  name="paymentMode"
-                  value={formData.paymentMode}
-                  required
-                  className="w-full py-2 border-b border-gray-300 outline-none text-sm"
-                  onChange={handleInputChange}
-                >
-                  <option value="">Select</option>
-                  <option>Bank Transfer</option>
-                  <option>Cash</option>
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-10">
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
@@ -988,20 +1069,22 @@ export default function JobForm() {
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="NTN"
+                label="NTN (Optional)"
                 name="ntn"
                 placeholder="e.g. 1234567-8"
               />
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="EOBI Registration No."
+                label="EOBI Registration No. (Optional)"
                 name="eobi"
+                placeholder="e.g. 1234567-8"
               />
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="SESSI / PESSI Registration"
+                label="SESSI / PESSI Registration (Optional)"
+                placeholder="Provide registration number if applicable"
                 name="sessi"
               />
             </div>
@@ -1139,20 +1222,20 @@ export default function JobForm() {
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="Spouse Full Name"
+                label="Spouse Full Name (OOptional)"
                 name="spouseName"
               />
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="Spouse CNIC"
+                label="Spouse CNIC (OOptional)"
                 name="spouseCnic"
                 placeholder="XXXXX-XXXXXXX-X"
               />
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="Date of Birth"
+                label="Date of Birth (OOptional)"
                 name="spouseDob"
                 type="date"
               />
@@ -1163,7 +1246,7 @@ export default function JobForm() {
                   Is Dependent?
                 </label>
                 <select
-                  name="spouseDependent"
+                  name="spouseDependent (OOptional)"
                   value={formData.spouseDependent}
                   className="w-full py-2 border-b border-gray-300 bg-transparent outline-none text-sm"
                   onChange={handleInputChange}
@@ -1176,20 +1259,20 @@ export default function JobForm() {
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="Spouse Occupation"
+                label="Spouse Occupation (OOptional)"
                 name="spouseOcc"
                 placeholder="e.g. Teacher, Housewife"
               />
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="Spouse Contact Number"
+                label="Spouse Contact Number (OOptional)"
                 name="spouseContact"
                 placeholder="03XX-XXXXXXX"
               />
             </div>
 
-            <SubHeading text="Children & Other Dependents" />
+            <SubHeading text="Children & Other Dependents (OOptional)" />
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left border-collapse border border-purple-50">
                 <thead className="bg-[#dbdbdb] text-black uppercase font-black tracking-wider border-b border-black select-none text-[9px]">
@@ -1325,10 +1408,8 @@ export default function JobForm() {
                   onChange={handleInputChange}
                 >
                   <option value="">Select</option>
-                  <option>Working</option>
-                  <option>Retired</option>
-                  <option>Deceased</option>
-                  <option>Other</option>
+                  <option value="alive">Alive</option>
+                  <option value="dead">Dead</option>
                 </select>
               </div>
               <UnderlineInput
@@ -1356,10 +1437,8 @@ export default function JobForm() {
                   onChange={handleInputChange}
                 >
                   <option value="">Select</option>
-                  <option>Working</option>
-                  <option>Housewife</option>
-                  <option>Retired</option>
-                  <option>Other</option>
+                  <option value="alive">Alive</option>
+                  <option value="dead">Dead</option>
                 </select>
               </div>
               <UnderlineInput
@@ -1529,6 +1608,7 @@ export default function JobForm() {
                     <th className="p-3 border">Board / University</th>
                     <th className="p-3 border">Year</th>
                     <th className="p-3 border">Grade / CGPA</th>
+                    <th className="p-3 border">Document</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1631,32 +1711,27 @@ export default function JobForm() {
                           }
                         />
                       </td>
+                      <td className="p-1 border border-purple-50 w-40">
+                        <PreviewBox
+                          label={
+                            row.subject
+                              ? "Document * (Required)"
+                              : "Document (Optional)"
+                          }
+                          field={`educationDoc${idx}`}
+                          preview={previews[`educationDoc${idx}`]}
+                          fileName={fileNames[`educationDoc${idx}`]}
+                          onFileChange={handleFileChange}
+                          accept=".pdf,image/*"
+                          inputRef={(el) =>
+                            (fileInputsRef.current[`educationDoc${idx}`] = el)
+                          }
+                        />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-10">
-              <div className="space-y-2">
-                <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block">
-                  Degree / Certificate Copies ? Upload highest qualification
-                  (PDF or image)
-                </label>
-                <div className="min-h-[90px] bg-gray-50 border border-dashed border-purple-100 rounded-xl relative flex items-center justify-center overflow-hidden transition-all hover:bg-purple-50 p-4">
-                  <div className="text-center">
-                    <p className="text-xs text-gray-500 font-medium">
-                      {previews.degreeCertificate ??
-                        "PDF / JPG / PNG ? max 5 MB"}
-                    </p>
-                  </div>
-                  <input
-                    type="file"
-                    accept=".pdf,image/*"
-                    onChange={(e) => handleFileChange(e, "degreeCertificate")}
-                    className="absolute inset-0 opacity-0 cursor-pointer"
-                  />
-                </div>
-              </div>
             </div>
 
             <SubHeading text="Professional Certifications & Training" />
@@ -1667,6 +1742,7 @@ export default function JobForm() {
                     <th className="p-3 border">Certification / Course Name</th>
                     <th className="p-3 border">Issuing Body</th>
                     <th className="p-3 border">Year</th>
+                    <th className="p-3 border">Document</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1715,6 +1791,24 @@ export default function JobForm() {
                               e.target.value,
                               "certifications",
                             )
+                          }
+                        />
+                      </td>
+                      <td className="p-1 border border-purple-50 w-40">
+                        <PreviewBox
+                          label={
+                            row.course
+                              ? "Document * (Required)"
+                              : "Document (Optional)"
+                          }
+                          field={`certificationDoc${idx}`}
+                          preview={previews[`certificationDoc${idx}`]}
+                          fileName={fileNames[`certificationDoc${idx}`]}
+                          onFileChange={handleFileChange}
+                          accept=".pdf,image/*"
+                          inputRef={(el) =>
+                            (fileInputsRef.current[`certificationDoc${idx}`] =
+                              el)
                           }
                         />
                       </td>
@@ -1893,27 +1987,21 @@ export default function JobForm() {
                   </div>
                 </div>
                 <div className="mt-8">
-                  <div className="space-y-2">
-                    <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block">
-                      Experience / Relieving Letter ? Employer {idx + 1}
-                    </label>
-                    <div className="min-h-[90px] bg-gray-50 border border-dashed border-purple-100 rounded-xl relative flex items-center justify-center overflow-hidden transition-all hover:bg-purple-50 p-4">
-                      <div className="text-center">
-                        <p className="text-xs text-gray-500 font-medium">
-                          {previews[`experienceLetter${idx + 1}`] ??
-                            "Upload Letter"}
-                        </p>
-                      </div>
-                      <input
-                        type="file"
-                        accept=".pdf,image/*"
-                        onChange={(e) =>
-                          handleFileChange(e, `experienceLetter${idx + 1}`)
-                        }
-                        className="absolute inset-0 opacity-0 cursor-pointer"
-                      />
-                    </div>
-                  </div>
+                  <PreviewBox
+                    label={
+                      exp.company
+                        ? `Experience Letter – Required`
+                        : `Experience Letter – Optional`
+                    }
+                    field={`experienceLetter${idx + 1}`}
+                    preview={previews[`experienceLetter${idx + 1}`]}
+                    fileName={fileNames[`experienceLetter${idx + 1}`]}
+                    onFileChange={handleFileChange}
+                    accept=".pdf,image/*"
+                    inputRef={(el) =>
+                      (fileInputsRef.current[`experienceLetter${idx + 1}`] = el)
+                    }
+                  />
                 </div>
               </div>
             ))}
@@ -2060,6 +2148,8 @@ export default function JobForm() {
                   name="declarantName"
                   required
                   placeholder="Print your full name"
+                  register={register}
+                  error={errors.declarantName?.message as string}
                 />
                 <UnderlineInput
                   formData={formData}
@@ -2068,6 +2158,8 @@ export default function JobForm() {
                   name="declarantDate"
                   required
                   type="date"
+                  register={register}
+                  error={errors.declarantDate?.message as string}
                 />
               </div>
               <div className="grid grid-cols-2 gap-6">
@@ -2076,13 +2168,19 @@ export default function JobForm() {
                   field="signatureImage"
                   required
                   preview={previews.signatureImage}
+                  fileName={fileNames.signatureImage}
                   onFileChange={handleFileChange}
+                  inputRef={(el) => (fileInputsRef.current.signatureImage = el)}
                 />
                 <PreviewBox
                   label="Thumb Impression"
                   field="thumbImpression"
                   preview={previews.thumbImpression}
+                  fileName={fileNames.thumbImpression}
                   onFileChange={handleFileChange}
+                  inputRef={(el) =>
+                    (fileInputsRef.current.thumbImpression = el)
+                  }
                 />
               </div>
             </div>
@@ -2090,10 +2188,8 @@ export default function JobForm() {
             <div className="mt-10 flex items-start gap-4 cursor-pointer group">
               <input
                 type="checkbox"
-                name="consent"
                 required
-                checked={formData.consent}
-                onChange={handleInputChange}
+                {...register("consent", { required: true })}
                 className="mt-1 w-6 h-6 rounded accent-[#dbdbdb]"
               />
               <span className="text-sm font-black text-gray-800 group-hover:text-purple-700 transition-colors uppercase tracking-tight">
@@ -2107,7 +2203,17 @@ export default function JobForm() {
             {/* CLEAR FORM BUTTON - Clean Muted Tone */}
             <button
               type="button"
-              onClick={() => window.location.reload()}
+              onClick={() => {
+                setFormData(initialFormData);
+                setPreviews({});
+                setFileNames({});
+                setFiles({});
+                Object.values(fileInputsRef.current).forEach((el) => {
+                  try {
+                    if (el) el.value = "";
+                  } catch (e) {}
+                });
+              }}
               className="w-full md:w-auto px-8 py-3 text-xs font-black text-neutral-500 uppercase tracking-widest hover:text-black hover:bg-neutral-200 border border-transparent hover:border-neutral-400 rounded transition-all text-center"
             >
               Clear Form
@@ -2116,9 +2222,21 @@ export default function JobForm() {
             {/* SUBMIT INFORMATION BUTTON - Solid Black Corporate Style */}
             <button
               type="submit"
-              className="w-full md:w-auto cursor-pointer px-12 py-3 bg-black border border-black text-white font-black text-xs uppercase tracking-widest hover:bg-neutral-900 transition-all shadow-sm text-center"
+              disabled={saving}
+              className={`w-full md:w-auto px-10 py-3 font-bold text-xs uppercase tracking-widest transition-all rounded shadow-md ${
+                saving
+                  ? "bg-gray-400 cursor-not-allowed text-white"
+                  : "bg-black text-white hover:bg-zinc-800 cursor-pointer"
+              }`}
             >
-              Submit Information
+              {saving ? (
+                <div className="flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span>Submiting Data...</span>
+                </div>
+              ) : (
+                "Submit Information"
+              )}
             </button>
           </div>
         </form>

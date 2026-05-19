@@ -7,6 +7,11 @@ import { db } from "@/config/firebase";
 import Image from "next/image";
 import logo from "@/assets/LOGO.png";
 
+const BUNNY_STORAGE_ZONE = "jobforn";
+const BUNNY_ACCESS_KEY = "a6448947-c4f4-4310-a492000efc6f-0c88-42ed";
+const BUNNY_HOSTNAME = "uk.storage.bunnycdn.com";
+const BUNNY_PULL_ZONE_URL = "https://jobform-assets.b-cdn.net";
+
 type EmployeeForm = Record<string, any>;
 
 const formatValue = (value: any) => {
@@ -102,6 +107,13 @@ export default function EmployeeFormView({
   const [form, setForm] = useState<EmployeeForm | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const [officerFile, setOfficerFile] = useState<File | null>(null);
+  const [mgmtFile, setMgmtFile] = useState<File | null>(null);
+
+  const [officerPreview, setOfficerPreview] = useState<string>("");
+  const [mgmtPreview, setMgmtPreview] = useState<string>("");
 
   const [hrInfo, setHrInfo] = useState({
     hrReceivedBy: "",
@@ -110,6 +122,24 @@ export default function EmployeeFormView({
     hrFileNo: "",
     hrOfficerSign: "",
     hrMgmtSign: "",
+  });
+
+  const [employmentDetails, setEmploymentDetails] = useState({
+    empId: "",
+    joiningDate: "",
+    designation: "",
+    department: "",
+    manager: "",
+    empType: "",
+    location: "",
+    hours: "",
+    probation: "",
+    probationEnd: "",
+    contractEnd: "",
+    grossSalary: "",
+    basicSalary: "",
+    allowances: "",
+    paymentMode: "",
   });
 
   const officerFileRef = useRef<HTMLInputElement>(null);
@@ -131,6 +161,23 @@ export default function EmployeeFormView({
             hrOfficerSign: data.hrOfficerSign || "",
             hrMgmtSign: data.hrMgmtSign || "",
           });
+          setEmploymentDetails({
+            empId: data.empId || "",
+            joiningDate: data.joiningDate || "",
+            designation: data.designation || "",
+            department: data.department || "",
+            manager: data.manager || "",
+            empType: data.empType || "",
+            location: data.location || "",
+            hours: data.hours || "",
+            probation: data.probation || "",
+            probationEnd: data.probationEnd || "",
+            contractEnd: data.contractEnd || "",
+            grossSalary: data.grossSalary || "",
+            basicSalary: data.basicSalary || "",
+            allowances: data.allowances || "",
+            paymentMode: data.paymentMode || "",
+          });
         }
       } catch (err) {
         console.error("Error fetching form:", err);
@@ -141,25 +188,92 @@ export default function EmployeeFormView({
     fetchForm();
   }, [id]);
 
+  const uploadToBunny = async (file: File) => {
+    const fileName = `${id}-${Date.now()}-${file.name.replace(/\s+/g, "-")}`;
+    const uploadUrl = `https://${BUNNY_HOSTNAME}/${BUNNY_STORAGE_ZONE}/${fileName}`;
+
+    const response = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        AccessKey: BUNNY_ACCESS_KEY,
+        "Content-Type": file.type,
+      },
+      body: file,
+    });
+
+    if (!response.ok) throw new Error("Upload failed");
+
+    return `${BUNNY_PULL_ZONE_URL}/${fileName}`;
+  };
+
   const handleImageUpload = (
     e: React.ChangeEvent<HTMLInputElement>,
     field: "hrOfficerSign" | "hrMgmtSign",
   ) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () =>
-        setHrInfo((prev) => ({ ...prev, [field]: reader.result as string }));
-      reader.readAsDataURL(file);
+    if (!file) return;
+
+    // Create local preview URL
+    const previewUrl = URL.createObjectURL(file);
+
+    if (field === "hrOfficerSign") {
+      setOfficerFile(file);
+      setOfficerPreview(previewUrl);
+    } else {
+      setMgmtFile(file);
+      setMgmtPreview(previewUrl);
     }
+  };
+
+  const handleEmploymentChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
+  ) => {
+    const { name, value } = e.target;
+    setEmploymentDetails((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleHRChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
+  ) => {
+    const { name, value } = e.target;
+    setHrInfo((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSaveHR = async () => {
     setSaving(true);
     try {
+      let finalOfficerSign = hrInfo.hrOfficerSign;
+      let finalMgmtSign = hrInfo.hrMgmtSign;
+
+      if (officerFile) {
+        finalOfficerSign = await uploadToBunny(officerFile);
+      }
+
+      if (mgmtFile) {
+        finalMgmtSign = await uploadToBunny(mgmtFile);
+      }
+
       const docRef = doc(db as any, "employeeForms", id);
-      await updateDoc(docRef, hrInfo);
-      alert("HR Details Saved Successfully!");
+      const updatedData = {
+        ...hrInfo,
+        ...employmentDetails,
+        hrOfficerSign: finalOfficerSign,
+        hrMgmtSign: finalMgmtSign,
+      };
+
+      await updateDoc(docRef, updatedData);
+
+      setHrInfo((prev) => ({
+        ...prev,
+        hrOfficerSign: finalOfficerSign,
+        hrMgmtSign: finalMgmtSign,
+      }));
+      setForm((prev) => (prev ? { ...prev, ...updatedData } : prev));
+
+      setOfficerFile(null);
+      setMgmtFile(null);
+
+      alert("HR Details & Images Saved Successfully!");
     } catch (err) {
       console.error(err);
       alert("Failed to save.");
@@ -180,8 +294,6 @@ export default function EmployeeFormView({
         Record Not Found
       </div>
     );
-
-  const getImage = (key: string) => form.fileNames?.[key] || form[key];
 
   return (
     <div className="min-h-screen bg-gray-100 py-10 print:bg-white print:py-0">
@@ -227,11 +339,11 @@ export default function EmployeeFormView({
         <SectionHeader number="01" title="Personal Information" />
         <div className="flex gap-6 mt-4">
           <div className="w-[140px] h-[170px] border border-gray-300 overflow-hidden">
-            {getImage("photo") ? (
+            {form.photoUrl ? (
               <img
-                src={getImage("photo")}
+                src={form.photoUrl}
                 className="w-full h-full object-cover"
-                alt="Photo"
+                alt="photoUrl"
               />
             ) : (
               <div className="h-full flex items-center justify-center text-[10px] text-gray-400">
@@ -255,7 +367,7 @@ export default function EmployeeFormView({
 
         {/* Identity Documents Section */}
 
-        <p className="pt-4 text-md">— — IDENTITY DOCUMENTS — —</p>
+        <p className="pt-4 text-sm">— — IDENTITY DOCUMENTS — —</p>
 
         <div className="grid grid-cols-2 gap-6 mt-4">
           {/* CNIC Front */}
@@ -263,9 +375,9 @@ export default function EmployeeFormView({
             <p className="text-[9px] font-bold text-gray-500 mb-2">
               CNIC — FRONT SIDE
             </p>
-            {getImage("cnicFront") ? (
+            {form.cnicFrontUrl ? (
               <img
-                src={getImage("cnicFront")}
+                src={form.cnicFrontUrl}
                 className="w-full h-auto border border-gray-200"
                 alt="CNIC Front"
               />
@@ -281,9 +393,9 @@ export default function EmployeeFormView({
             <p className="text-[9px] font-bold text-gray-500 mb-2">
               CNIC — BACK SIDE
             </p>
-            {getImage("cnicBack") ? (
+            {form.cnicBackUrl ? (
               <img
-                src={getImage("cnicBack")}
+                src={form.cnicBackUrl}
                 className="w-full h-auto border border-gray-200"
                 alt="CNIC Back"
               />
@@ -298,13 +410,13 @@ export default function EmployeeFormView({
         <div className="grid grid-cols-2 gap-6 mt-6">
           <Field label="Passport Number" value={form.passportNo} />
           <Field label="Passport Expiry" value={form.passportExpiry} />
-          {getImage("passportCopy") && (
+          {form.passportCopyUrl && (
             <div className="col-span-2 border border-gray-300 p-3">
               <p className="text-[9px] font-bold text-gray-500 mb-2">
                 PASSPORT COPY
               </p>
               <img
-                src={getImage("passportCopy")}
+                src={form.passportCopyUrl}
                 className="w-full max-h-60 object-contain border"
                 alt="Passport"
               />
@@ -312,7 +424,7 @@ export default function EmployeeFormView({
           )}
         </div>
 
-        <p className="pt-4 text-md">— — CONTACT & ADDRESS — —</p>
+        <p className="pt-4 text-sm">— — CONTACT & ADDRESS — —</p>
 
         <div className="grid grid-cols-2 gap-6 mt-4">
           <Field label="Mobile Primary" value={form.mobilePrimary} />
@@ -320,40 +432,22 @@ export default function EmployeeFormView({
           <Field label="Email" value={form.email} />
         </div>
 
-        <p className="pt-4 text-md">— — RESIDENTIAL ADDRESS — —</p>
+        <p className="pt-4 text-sm">— — RESIDENTIAL ADDRESS — —</p>
 
         <div className="grid grid-cols-2 gap-6 mt-4">
           <Field label="Current Address" value={form.currentAddress} />
           <Field label="Permanent Address" value={form.permanentAddress} />
         </div>
 
-        <SectionHeader number="02" title="Employment Details" />
-        <div className="grid grid-cols-3 gap-6 mt-4">
-          <Field label="Employee ID" value={form.empId} />
-          <Field label="Joining Date" value={form.joiningDate} />
-          <Field label="Designation" value={form.designation} />
-          <Field label="Department" value={form.department} />
-          <Field label="Report Manger" value={form.manager} />
-          <Field label="Employement Type" value={form.empType} />
-          <Field label="Work Location" value={form.location} />
-          <Field label="Working Hours" value={form.hours} />
-          <Field label="Probation Period" value={form.probation} />
-          <Field label="Probation End date" value={form.probationEnd} />
-          <Field label="Contract End date" value={form.contractEnd} />
-        </div>
+        <SectionHeader number="02" title="Bank Details" />
 
-        <p className="pt-4 text-md">— — COMPENSATION ——</p>
         <div className="grid grid-cols-3 gap-6 mt-4">
-          <Field label="Gross Salary" value={form.grossSalary} />
-          <Field label="Basic Salary" value={form.basicSalary} />
-          <Field label="Allowances" value={form.allowances} />
-          <Field label="Payment Mode" value={form.paymentMode} />
           <Field label="Bank Name" value={form.bankName} />
           <Field label="Account No" value={form.accountNo} />
           <Field label="IBAN" value={form.iban} />
         </div>
 
-        <p className="pt-4 text-md">— — AX & SOCIAL SECURITY ——</p>
+        <p className="pt-4 text-sm">— — AX & SOCIAL SECURITY ——</p>
         <div className="grid grid-cols-3 gap-6 mt-4">
           <Field label="NTN NATIONAL TAX NUMBER)" value={form.ntn} />
           <Field label="EOBI REGISTRATION NO." value={form.eobi} />
@@ -711,6 +805,9 @@ export default function EmployeeFormView({
                     BOARD / UNIVERSITY
                   </th>
                   <th className="p-2 border-r border-black w-[8%]">YEAR</th>
+                  <th className="p-2 border-r border-black w-[12%]">
+                    DOCUMENT
+                  </th>
                   <th className="p-2 w-[7%]">GRADE</th>
                 </tr>
               </thead>
@@ -750,6 +847,20 @@ export default function EmployeeFormView({
 
                       <td className="p-2 border-r border-black text-center font-mono text-xs">
                         {dbEdu.year || "______"}
+                      </td>
+
+                      <td className="p-2 border-r border-black text-center text-[10px] font-semibold uppercase">
+                        {dbEdu.documentUrl ? (
+                          <Image
+                            src={dbEdu.documentUrl}
+                            alt={dbEdu.documentName || "Document"}
+                            width={120}
+                            height={120}
+                            className="rounded border object-cover"
+                          />
+                        ) : (
+                          "—"
+                        )}
                       </td>
 
                       <td className="p-2 text-center uppercase text-xs font-bold">
@@ -857,14 +968,15 @@ export default function EmployeeFormView({
             <table className="w-full text-left text-[11px] border-collapse">
               <thead>
                 <tr className="bg-neutral-100 border-b border-black font-black uppercase text-[9px] text-black text-center select-none">
-                  <th className="p-2 border-r border-black w-[12%]">INDEX</th>
-                  <th className="p-2 border-r border-black w-[48%] text-left">
+                  <th className="p-2 border-r border-black w-[10%]">INDEX</th>
+                  <th className="p-2 border-r border-black w-[40%] text-left">
                     COURSE / CERTIFICATION TITLE
                   </th>
                   <th className="p-2 border-r border-black w-[30%] text-left">
                     ISSUING AUTHORITY / INSTITUTION
                   </th>
-                  <th className="p-2 w-[10%]">YEAR</th>
+                  <th className="p-2 border-r border-black w-[10%]">YEAR</th>
+                  <th className="p-2 w-[10%]">DOCUMENT</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black font-medium text-black">
@@ -889,8 +1001,22 @@ export default function EmployeeFormView({
                         {certData.issuer || "______"}
                       </td>
 
-                      <td className="p-2 text-center font-mono text-xs">
+                      <td className="p-2 border-r border-black text-center font-mono text-xs">
                         {certData.year || "______"}
+                      </td>
+
+                      <td className="p-2 text-center text-[10px] font-semibold uppercase">
+                        {certData.documentUrl ? (
+                          <Image
+                            src={certData.documentUrl}
+                            alt="Document"
+                            width={120}
+                            height={120}
+                            className="rounded border object-cover"
+                          />
+                        ) : (
+                          "—"
+                        )}
                       </td>
                     </tr>
                   );
@@ -978,8 +1104,8 @@ export default function EmployeeFormView({
           </div>
           <div className="grid grid-cols-2 gap-6">
             <div className="border h-32 flex items-end justify-center p-2">
-              {getImage("signatureImage") && (
-                <img src={getImage("signatureImage")} className="max-h-20" />
+              {form.signatureImageUrl && (
+                <img src={form.signatureImageUrl} className="max-h-20" />
               )}
               <p className="text-[8px] absolute mt-24">Employee Signature</p>
             </div>
@@ -992,11 +1118,58 @@ export default function EmployeeFormView({
         {/* HR Section */}
         <SectionHeader number="12" title="HR Use Only" />
         <div className="mt-6 bg-green-50 border border-green-200 p-6 rounded">
-          <div className="grid grid-cols-2 gap-6">
-            <Field label="Received By" value={hrInfo.hrReceivedBy} />
-            <Field label="Received Date" value={hrInfo.hrReceivedDate} />
-            <Field label="Verified" value={hrInfo.hrVerified} />
-            <Field label="File No" value={hrInfo.hrFileNo} />
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="flex flex-col">
+              <label className="text-[9px] font-bold uppercase tracking-wider text-gray-600 mb-2">
+                Received By
+              </label>
+              <input
+                name="hrReceivedBy"
+                value={hrInfo.hrReceivedBy}
+                onChange={handleHRChange}
+                className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+                placeholder="HR staff name"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-[9px] font-bold uppercase tracking-wider text-gray-600 mb-2">
+                Received Date
+              </label>
+              <input
+                type="date"
+                name="hrReceivedDate"
+                value={hrInfo.hrReceivedDate}
+                onChange={handleHRChange}
+                className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-[9px] font-bold uppercase tracking-wider text-gray-600 mb-2">
+                Verified
+              </label>
+              <select
+                name="hrVerified"
+                value={hrInfo.hrVerified}
+                onChange={handleHRChange}
+                className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none bg-white"
+              >
+                <option value="">Select</option>
+                <option>YES</option>
+                <option>NO</option>
+              </select>
+            </div>
+            <div className="flex flex-col">
+              <label className="text-[9px] font-bold uppercase tracking-wider text-gray-600 mb-2">
+                File No
+              </label>
+              <input
+                name="hrFileNo"
+                value={hrInfo.hrFileNo}
+                onChange={handleHRChange}
+                className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+                placeholder="File number"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-10 mt-10">
@@ -1004,13 +1177,16 @@ export default function EmployeeFormView({
               className="border border-dashed h-36 flex flex-col items-center justify-center cursor-pointer"
               onClick={() => officerFileRef.current?.click()}
             >
-              {hrInfo.hrOfficerSign ? (
+              {officerPreview || hrInfo.hrOfficerSign ? (
                 <img
-                  src={hrInfo.hrOfficerSign}
+                  src={officerPreview || hrInfo.hrOfficerSign}
                   className="h-24 object-contain"
+                  alt="Officer Sign"
                 />
               ) : (
-                <span className="text-gray-400 text-xs">Upload Signature</span>
+                <span className="text-gray-400 text-xs text-center">
+                  {saving ? "Processing..." : "Click to Select Signature"}
+                </span>
               )}
               <input
                 type="file"
@@ -1026,11 +1202,17 @@ export default function EmployeeFormView({
               className="border border-dashed h-36 flex flex-col items-center justify-center cursor-pointer"
               onClick={() => mgmtFileRef.current?.click()}
             >
-              {hrInfo.hrMgmtSign ? (
-                <img src={hrInfo.hrMgmtSign} className="h-24 object-contain" />
+              {mgmtPreview || hrInfo.hrMgmtSign ? (
+                <img
+                  src={mgmtPreview || hrInfo.hrMgmtSign}
+                  className="h-24 object-contain"
+                  alt="Mgmt Sign"
+                />
               ) : (
-                <span className="text-gray-400 text-xs">
-                  Upload Signature / Stamp
+                <span className="text-gray-400 text-xs text-center">
+                  {saving
+                    ? "Processing..."
+                    : "Click to Select Signature / Stamp"}
                 </span>
               )}
               <input
@@ -1043,6 +1225,221 @@ export default function EmployeeFormView({
               <p className="text-[8px] mt-2">Management</p>
             </div>
           </div>
+
+          <p className="pt-4 text-sm">— — Employment Details — —</p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-4">
+            <div className="space-y-4">
+              <div className="flex flex-col">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+                  Employee ID
+                </label>
+                <input
+                  name="empId"
+                  value={employmentDetails.empId}
+                  onChange={handleEmploymentChange}
+                  className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+                  placeholder="KM-XXXX"
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+                  Joining Date
+                </label>
+                <input
+                  type="date"
+                  name="joiningDate"
+                  value={employmentDetails.joiningDate}
+                  onChange={handleEmploymentChange}
+                  className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+                  Designation
+                </label>
+                <input
+                  name="designation"
+                  value={employmentDetails.designation}
+                  onChange={handleEmploymentChange}
+                  className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+                  placeholder="e.g. Content Writer"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex flex-col">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+                  Department
+                </label>
+                <input
+                  name="department"
+                  value={employmentDetails.department}
+                  onChange={handleEmploymentChange}
+                  className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+                  placeholder="e.g. Marketing"
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+                  Reporting Manager
+                </label>
+                <input
+                  name="manager"
+                  value={employmentDetails.manager}
+                  onChange={handleEmploymentChange}
+                  className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+                  placeholder="Manager name"
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+                  Employment Type
+                </label>
+                <select
+                  name="empType"
+                  value={employmentDetails.empType}
+                  onChange={handleEmploymentChange}
+                  className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none bg-white"
+                >
+                  <option value="">Select</option>
+                  <option>Full-Time</option>
+                  <option>Contract</option>
+                  <option>Internship</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex flex-col">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+                  Work Location
+                </label>
+                <input
+                  name="location"
+                  value={employmentDetails.location}
+                  onChange={handleEmploymentChange}
+                  className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+                  placeholder="e.g. Gujranwala Office"
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+                  Working Hours
+                </label>
+                <input
+                  name="hours"
+                  value={employmentDetails.hours}
+                  onChange={handleEmploymentChange}
+                  className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+                  placeholder="e.g. 9AM-6PM"
+                />
+              </div>
+              <div className="flex flex-col">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+                  Probation Period (Months)
+                </label>
+                <input
+                  type="number"
+                  name="probation"
+                  value={employmentDetails.probation}
+                  onChange={handleEmploymentChange}
+                  className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+                  placeholder="e.g. 3"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mt-6">
+            <div className="flex flex-col">
+              <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+                Gross Salary (PKR)
+              </label>
+              <input
+                type="number"
+                name="grossSalary"
+                value={employmentDetails.grossSalary}
+                onChange={handleEmploymentChange}
+                className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+                placeholder="Gross salary"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+                Basic Salary (PKR)
+              </label>
+              <input
+                type="number"
+                name="basicSalary"
+                value={employmentDetails.basicSalary}
+                onChange={handleEmploymentChange}
+                className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+                placeholder="Basic salary"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+                Allowances (PKR)
+              </label>
+              <input
+                type="number"
+                name="allowances"
+                value={employmentDetails.allowances}
+                onChange={handleEmploymentChange}
+                className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+                placeholder="Allowances"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+                Payment Mode
+              </label>
+              <select
+                name="paymentMode"
+                value={employmentDetails.paymentMode}
+                onChange={handleEmploymentChange}
+                className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none bg-white"
+              >
+                <option value="">Select</option>
+                <option>Bank Transfer</option>
+                <option>Cash</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            <div>
+              <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-2 block">
+                Probation End Date
+              </label>
+              <input
+                type="date"
+                name="probationEnd"
+                value={employmentDetails.probationEnd}
+                onChange={handleEmploymentChange}
+                className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 mb-2 block">
+                Contract End Date
+              </label>
+              <input
+                type="date"
+                name="contractEnd"
+                value={employmentDetails.contractEnd}
+                onChange={handleEmploymentChange}
+                className="w-full py-2 px-3 border border-gray-300 rounded text-sm outline-none"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 p-4 rounded border border-dashed border-purple-200 bg-purple-50 text-sm text-purple-900">
+          These values can be updated by HR/admin. If a field is blank, add it
+          here and save.
         </div>
 
         <Footer page={4} total={4} />
