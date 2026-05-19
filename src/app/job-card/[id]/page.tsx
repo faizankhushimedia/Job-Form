@@ -335,7 +335,6 @@ export default function EmployeeFormView({
             EXPERTS IN AUTOMOTIVE
           </p>
         </div>
-
         <SectionHeader number="01" title="Personal Information" />
         <div className="flex gap-6 mt-4">
           <div className="w-[140px] h-[170px] border border-gray-300 overflow-hidden">
@@ -364,11 +363,8 @@ export default function EmployeeFormView({
             <Field label="Location" value={form.location} />
           </div>
         </div>
-
         {/* Identity Documents Section */}
-
         <p className="pt-4 text-sm">— — IDENTITY DOCUMENTS — —</p>
-
         <div className="grid grid-cols-2 gap-6 mt-4">
           {/* CNIC Front */}
           <div className="border border-gray-300 p-3">
@@ -406,7 +402,6 @@ export default function EmployeeFormView({
             )}
           </div>
         </div>
-
         <div className="grid grid-cols-2 gap-6 mt-6">
           <Field label="Passport Number" value={form.passportNo} />
           <Field label="Passport Expiry" value={form.passportExpiry} />
@@ -423,39 +418,30 @@ export default function EmployeeFormView({
             </div>
           )}
         </div>
-
         <p className="pt-4 text-sm">— — CONTACT & ADDRESS — —</p>
-
         <div className="grid grid-cols-2 gap-6 mt-4">
           <Field label="Mobile Primary" value={form.mobilePrimary} />
           <Field label="Mobile Secondary" value={form.mobileSecondary} />
           <Field label="Email" value={form.email} />
         </div>
-
         <p className="pt-4 text-sm">— — RESIDENTIAL ADDRESS — —</p>
-
         <div className="grid grid-cols-2 gap-6 mt-4">
           <Field label="Current Address" value={form.currentAddress} />
           <Field label="Permanent Address" value={form.permanentAddress} />
         </div>
-
         <SectionHeader number="02" title="Bank Details" />
-
         <div className="grid grid-cols-3 gap-6 mt-4">
           <Field label="Bank Name" value={form.bankName} />
           <Field label="Account No" value={form.accountNo} />
           <Field label="IBAN" value={form.iban} />
         </div>
-
         <p className="pt-4 text-sm">— — AX & SOCIAL SECURITY ——</p>
         <div className="grid grid-cols-3 gap-6 mt-4">
           <Field label="NTN NATIONAL TAX NUMBER)" value={form.ntn} />
           <Field label="EOBI REGISTRATION NO." value={form.eobi} />
           <Field label="SESSI / PESSI REGISTRATION" value={form.sessi} />
         </div>
-
         <Footer page={1} />
-
         {/* Page 2 */}
         <div className="page-break" />
         <SectionHeader number="03" title="Health Profile" />
@@ -478,7 +464,6 @@ export default function EmployeeFormView({
           <Field label="Medications" value={form.medications} />
           <Field label="Health Notes" value={form.healthNotes} />
         </div>
-
         <SectionHeader number="04" title="Family &  Dependents" />
         <div className="space-y-5">
           {/* SEAMLESS STRUCTURED MATRIX CONTAINER */}
@@ -714,13 +699,9 @@ export default function EmployeeFormView({
             </div>
           </div>
         </div>
-
         <Footer page={2} />
-
         {/* Page 3 */}
-
         <SectionHeader number="05" title="Emergency Contacts" />
-
         <div className="space-y-4 mt-6">
           {/* EMERGENCY CONTACTS TITLE HEADER */}
           <div className="bg-neutral-100 p-2 font-black border border-black text-[9px] uppercase tracking-wider text-black select-none">
@@ -784,9 +765,7 @@ export default function EmployeeFormView({
             </div>
           </div>
         </div>
-
         <SectionHeader number="06" title="EDUCATIONAL Details" />
-
         <div className="space-y-4">
           <div className="border border-black bg-white overflow-hidden -mt-1 block-section">
             <table className="w-full text-left text-[11px] border-collapse">
@@ -873,9 +852,7 @@ export default function EmployeeFormView({
             </table>
           </div>
         </div>
-
         <SectionHeader number="07" title="Work Experience" />
-
         <div className="space-y-4">
           <div className="space-y-5 -mt-1">
             {Array.from({ length: 3 }).map((_, idx) => {
@@ -949,11 +926,32 @@ export default function EmployeeFormView({
                     />
                   </div>
 
-                  <div className="-mt-[1px]">
+                  <div className="border-b border-black -mt-[1px]">
                     <ExactImageRow
                       label="Reason for Leaving"
                       value={expData.reason}
                     />
+                  </div>
+
+                  {/* Experience Letter Image */}
+                  <div className="p-3 flex flex-col items-center justify-center border-t border-black">
+                    <p className="text-[9px] font-semibold mb-2 uppercase">
+                      Experience Letter
+                    </p>
+
+                    {expData.experienceLetterUrl ? (
+                      <Image
+                        src={expData.experienceLetterUrl}
+                        alt="Experience Letter"
+                        width={480}
+                        height={420}
+                        className="rounded border object-contain hover:opacity-80"
+                      />
+                    ) : (
+                      <p className="text-[10px] text-gray-500">
+                        No Experience Letter
+                      </p>
+                    )}
                   </div>
                 </div>
               );
@@ -962,7 +960,6 @@ export default function EmployeeFormView({
         </div>
 
         <SectionHeader number="08" title="Certifications" />
-
         <div className="space-y-4">
           <div className="border border-black bg-white overflow-hidden -mt-1 block-section">
             <table className="w-full text-left text-[11px] border-collapse">
@@ -1025,7 +1022,6 @@ export default function EmployeeFormView({
             </table>
           </div>
         </div>
-
         <div className="page-break" />
         <SectionHeader number="09" title="Skills & Languages" />
         <div className="mt-4 p-4 border border-gray-300 bg-gray-50 text-[11px] leading-relaxed">
@@ -1034,7 +1030,6 @@ export default function EmployeeFormView({
         <div className="mt-4 p-4 border border-gray-300 bg-gray-50 text-[11px] leading-relaxed">
           {form.languages || "—"}
         </div>
-
         <SectionHeader number="10" title="References" />
         <div className="space-y-4 mt-4">
           <div className="bg-neutral-100 p-2 font-black border border-black text-[9px] uppercase tracking-wider text-black select-none">
@@ -1076,9 +1071,7 @@ export default function EmployeeFormView({
             })}
           </div>
         </div>
-
         <Footer page={3} />
-
         {/* Page 4 */}
         <div className="page-break" />
         <SectionHeader number="11" title="Declaration" />
@@ -1096,25 +1089,39 @@ export default function EmployeeFormView({
           Khushi Media's policies, code of conduct, and confidentiality
           requirements."
         </div>
-
         <div className="grid grid-cols-2 gap-12 mt-12">
           <div>
             <Field label="Name" value={form.fullName} />
             <Field label="Date" value={form.declarantDate} />
           </div>
           <div className="grid grid-cols-2 gap-6">
-            <div className="border h-32 flex items-end justify-center p-2">
+            <div className="relative border h-32 flex mb-4 items-end justify-center p-2">
               {form.signatureImageUrl && (
-                <img src={form.signatureImageUrl} className="max-h-20" />
+                <Image
+                  src={form.signatureImageUrl}
+                  alt="Employee Signature"
+                  width={120}
+                  height={80}
+                  className="max-h-20 w-auto mb-4 object-contain"
+                />
               )}
-              <p className="text-[8px] absolute mt-24">Employee Signature</p>
+              <p className="text-[8px] absolute bottom-1">Employee Signature</p>
             </div>
-            <div className="border h-32 flex items-end justify-center p-2">
-              <p className="text-[8px]">Thumb Impression</p>
+
+            <div className="relative border h-32 flex items-end justify-center p-2">
+              {form.thumbImpressionUrl && (
+                <Image
+                  src={form.thumbImpressionUrl}
+                  alt="Thumb Impression"
+                  width={120}
+                  height={80}
+                  className="max-h-20 w-auto mb-4 object-contain"
+                />
+              )}
+              <p className="text-[8px] absolute bottom-1">Thumb Impression</p>
             </div>
           </div>
         </div>
-
         {/* HR Section */}
         <SectionHeader number="12" title="HR Use Only" />
         <div className="mt-6 bg-green-50 border border-green-200 p-6 rounded">
@@ -1436,12 +1443,10 @@ export default function EmployeeFormView({
             </div>
           </div>
         </div>
-
         <div className="mt-4 p-4 rounded border border-dashed border-purple-200 bg-purple-50 text-sm text-purple-900">
           These values can be updated by HR/admin. If a field is blank, add it
           here and save.
         </div>
-
         <Footer page={4} total={4} />
       </div>
     </div>

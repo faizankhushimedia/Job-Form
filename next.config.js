@@ -2,7 +2,7 @@
 const nextConfig = {
   reactCompiler: true,
    images: {
-    domains: ["your-pull-zone-name.b-cdn.net"],
+     domains: ["jobform-assets.b-cdn.net"],
   },
 };
 
