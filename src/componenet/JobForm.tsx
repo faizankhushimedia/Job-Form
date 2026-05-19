@@ -218,9 +218,10 @@ const PreviewBox = ({
 );
 
 const SubHeading = ({ text }: SubHeadingProps) => (
-  <div className="flex items-center gap-3 mt-8 mb-6">
-    <span className="w-2 h-2 bg-[#dbdbdb] rounded-full"></span>
-    <h3 className="text-[#dbdbdb] font-black text-xs uppercase tracking-[3px] border-b border-purple-50 flex-1 pb-1">
+  <div className="flex items-center gap-3 mt-10 mb-6 select-none">
+    <span className="w-2 h-2 bg-black rounded-full shrink-0"></span>
+
+    <h3 className="text-neutral-800 font-black text-[10px] md:text-[11px] uppercase tracking-[3px] border-b border-neutral-300 flex-1 pb-1.5">
       {text}
     </h3>
   </div>
@@ -741,6 +742,30 @@ export default function JobForm() {
     if (!validateExperience()) return;
 
     await performSubmit(merged);
+  };
+
+  const addChild = () => {
+    setFormData((prev) => ({
+      ...prev,
+      children: [
+        ...prev.children,
+        {
+          name: "",
+          relationship: "",
+          dob: "",
+          cnic: "",
+          gender: "",
+          dependent: "",
+        },
+      ],
+    }));
+  };
+
+  const removeChild = (index: number) => {
+    if (formData.children.length > 1) {
+      const newList = formData.children.filter((_, i) => i !== index);
+      setFormData((prev) => ({ ...prev, children: newList }));
+    }
   };
 
   return (
@@ -1295,14 +1320,21 @@ export default function JobForm() {
                     <th className="p-2.5 border border-black text-center">
                       Dependent?
                     </th>
+                    <th className="p-2.5 border border-black text-center">
+                      Action
+                    </th>{" "}
+                    {/* Naya column */}
                   </tr>
                 </thead>
                 <tbody>
                   {formData.children.map((child, idx) => (
-                    <tr key={idx}>
+                    <tr
+                      key={idx}
+                      className="hover:bg-gray-50 transition-colors"
+                    >
                       <td className="p-1 border border-purple-50">
                         <input
-                          className="w-full p-2 outline-none"
+                          className="w-full p-2 outline-none bg-transparent"
                           value={child.name}
                           placeholder="Full name"
                           onChange={(e) =>
@@ -1312,7 +1344,7 @@ export default function JobForm() {
                       </td>
                       <td className="p-1 border border-purple-50">
                         <input
-                          className="w-full p-2 outline-none"
+                          className="w-full p-2 outline-none bg-transparent"
                           value={child.relationship}
                           placeholder="Son/Daughter?"
                           onChange={(e) =>
@@ -1328,7 +1360,7 @@ export default function JobForm() {
                       <td className="p-1 border border-purple-50">
                         <input
                           type="date"
-                          className="w-full p-2 outline-none"
+                          className="w-full p-2 outline-none bg-transparent"
                           value={child.dob}
                           onChange={(e) =>
                             updateList(idx, "dob", e.target.value, "children")
@@ -1337,7 +1369,7 @@ export default function JobForm() {
                       </td>
                       <td className="p-1 border border-purple-50">
                         <input
-                          className="w-full p-2 outline-none"
+                          className="w-full p-2 outline-none bg-transparent"
                           value={child.cnic}
                           placeholder="ID number"
                           onChange={(e) =>
@@ -1347,7 +1379,7 @@ export default function JobForm() {
                       </td>
                       <td className="p-1 border border-purple-50">
                         <select
-                          className="w-full p-2 outline-none"
+                          className="w-full p-2 outline-none bg-transparent"
                           value={child.gender}
                           onChange={(e) =>
                             updateList(
@@ -1366,7 +1398,7 @@ export default function JobForm() {
                       </td>
                       <td className="p-1 border border-purple-50">
                         <select
-                          className="w-full p-2 outline-none"
+                          className="w-full p-2 outline-none bg-transparent"
                           value={child.dependent}
                           onChange={(e) =>
                             updateList(
@@ -1382,10 +1414,31 @@ export default function JobForm() {
                           <option>No</option>
                         </select>
                       </td>
+                      <td className="p-1 border border-purple-50 text-center">
+                        <button
+                          type="button"
+                          onClick={() => removeChild(idx)}
+                          className="text-red-500 hover:text-red-700 font-bold px-2"
+                          title="Remove"
+                        >
+                          ✕
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* ADD BUTTON */}
+            <div className="mt-4 flex justify-start">
+              <button
+                type="button"
+                onClick={addChild}
+                className="bg-black text-white px-4 py-2 text-[10px] font-black uppercase tracking-widest hover:bg-neutral-800 transition rounded shadow-sm flex items-center gap-2"
+              >
+                <span className="text-sm">+</span> Add Dependent Row
+              </button>
             </div>
 
             <SubHeading text="Parents / Guardians" />
@@ -1484,14 +1537,14 @@ export default function JobForm() {
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="Full Name *"
+                label="Full Name"
                 name="e1Name"
                 required
               />
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="Relationship *"
+                label="Relationship"
                 name="e1Relation"
                 required
                 placeholder="e.g. Father, Spouse"
@@ -1499,7 +1552,7 @@ export default function JobForm() {
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="Phone Number *"
+                label="Phone Number"
                 name="e1Phone"
                 required
               />
@@ -1525,24 +1578,21 @@ export default function JobForm() {
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="Full Name *"
+                label="Full Name"
                 name="e2Name"
-                required
               />
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="Relationship *"
+                label="Relationship"
                 name="e2Relation"
-                required
                 placeholder="e.g. Brother, Mother"
               />
               <UnderlineInput
                 formData={formData}
                 handleInputChange={handleInputChange}
-                label="Phone Number *"
+                label="Phone Number"
                 name="e2Phone"
-                required
               />
               <UnderlineInput
                 formData={formData}
@@ -2144,7 +2194,7 @@ export default function JobForm() {
                 <UnderlineInput
                   formData={formData}
                   handleInputChange={handleInputChange}
-                  label="Full Name (Print) *"
+                  label="Full Name (CNIC)"
                   name="declarantName"
                   required
                   placeholder="Print your full name"
@@ -2154,7 +2204,7 @@ export default function JobForm() {
                 <UnderlineInput
                   formData={formData}
                   handleInputChange={handleInputChange}
-                  label="Date *"
+                  label="Date"
                   name="declarantDate"
                   required
                   type="date"
@@ -2185,14 +2235,14 @@ export default function JobForm() {
               </div>
             </div>
 
-            <div className="mt-10 flex items-start gap-4 cursor-pointer group">
+            <div className="mt-10 flex items-center gap-4 cursor-pointer group">
               <input
                 type="checkbox"
                 required
                 {...register("consent", { required: true })}
                 className="mt-1 w-6 h-6 rounded accent-[#dbdbdb]"
               />
-              <span className="text-sm font-black text-gray-800 group-hover:text-purple-700 transition-colors uppercase tracking-tight">
+              <span className="text-sm mt-1 font-black text-gray-800 group-hover:text-purple-700 transition-colors uppercase tracking-tight">
                 I confirm the above declaration is true and I consent to Khushi
                 Media processing my personal data for employment purposes. *
               </span>
