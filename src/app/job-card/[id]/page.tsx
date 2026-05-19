@@ -940,12 +940,10 @@ export default function EmployeeFormView({
                     </p>
 
                     {expData.experienceLetterUrl ? (
-                      <Image
+                      <img
                         src={expData.experienceLetterUrl}
                         alt="Experience Letter"
-                        width={480}
-                        height={420}
-                        className="rounded border object-contain hover:opacity-80"
+                        className="w-full max-h-60 object-contain border"
                       />
                     ) : (
                       <p className="text-[10px] text-gray-500">
